@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Killer – Édition lycée</title>
+<style>
+:root{--bg:#faf6f4;--card:#fff;--tx:#1a1415;--mut:#6f6264;--ac:#c8102e;--acx:#fff;--bd:#e6dcd9;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#140d0e;--card:#211618;--tx:#f3eceb;--mut:#a89a9c;--ac:#ff3b57;--acx:#1a0a0d;--bd:#3a2a2d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4}
+main{max-width:480px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:2.2rem;margin:8px 0 2px;letter-spacing:-.02em}
+h2{font-size:1.2rem;margin:0 0 10px}
+.sub{color:var(--mut);margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:16px;margin:12px 0}
+button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:12px 16px}
+button.p{background:var(--ac);color:var(--acx);border-color:var(--ac);font-weight:700;width:100%;padding:14px;font-size:1.05rem}
+button:disabled{opacity:.4;cursor:not-allowed}
+input,textarea{font:inherit;width:100%;padding:12px;border-radius:12px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin-bottom:10px}
+textarea{min-height:140px}
+.big{font-size:1.7rem;font-weight:800;color:var(--ac);margin:6px 0}
+.code{font-size:2.6rem;font-weight:900;letter-spacing:.2em;color:var(--ac)}
+.mis{font-size:1.15rem;font-weight:600}
+.pl{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--bd)}
+.pl:last-child{border:0}
+.dead{opacity:.45;text-decoration:line-through}
+.badge{font-size:.85rem;color:var(--mut)}
+.center{text-align:center}
+.err{color:var(--ac);min-height:1.4em;font-weight:600}
+.log div{padding:4px 0;font-size:.95rem}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+</head>
+<body>
+<main id="app"></main>
+<script>
+// ====== À REMPLIR : Supabase > Project Settings > API ======
+const SUPABASE_URL="https://mqhkzlqsffibzlxegbaz.supabase.co";
+const SUPABASE_KEY="sb_publishable_0uGjPY7UME-_Sac6kw40gw_p4r6NYMf";
+// ===========================================================
+
+const DEF=[
+"Fais-lui te prêter un stylo","Fais-lui dire « Madame » ou « Monsieur » à un camarade",
+"Fais-lui dire « présent » alors que ce n’est pas l’appel","Fais-le te demander l’heure",
+"Fais-lui lever la main sans qu’il ait de question","Fais-le bâiller (fais-le toi-même devant lui)",
+"Fais-lui dire « j’ai pas compris »","Fais-lui imiter le prof, même une seule phrase",
+"Fais-lui prononcer le mot « baguette »","Fais-le te faire un compliment sur ta coiffure",
+"Fais-lui te dire « à tes souhaits » (fais semblant d’éternuer)","Fais-lui te demander « t’as une feuille ? »",
+"Fais-lui dire « c’est pas faux »","Fais-lui te donner un high five dans le couloir",
+"Fais-lui dire « sérieux ?! » avec la voix qui monte","Fais-lui te dire « bon appétit » hors de la cantine",
+"Fais-lui te demander « t’as fait l’exo ? »","Fais-le te prêter sa gomme",
+"Fais-lui dire « bonne journée » avec un grand sourire","Fais-le rire, mais sans que le prof le remarque"];
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let sb=null,S=null,V=null,ch=null,timer=null,draft=null,err='';
+try{S=JSON.parse(localStorage.getItem('killer')||'null')}catch(e){}
+try{sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY)}catch(e){err='Supabase n’est pas configuré (URL / clé).'}
+
+async function rpc(fn,args){
+  const {data,error}=await sb.rpc(fn,Object.assign({p_code:S&&S.code,p_token:S&&S.token},args||{}));
+  if(error)throw new Error(error.message);return data;
+}
+function save(s){S=s;try{localStorage.setItem('killer',JSON.stringify(s))}catch(e){}}
+function stop(){if(timer)clearInterval(timer);if(ch)sb.removeChannel(ch);ch=null;timer=null}
+function leave(){stop();S=null;V=null;try{localStorage.removeItem('killer')}catch(e){}render()}
+function ping(){if(ch)ch.send({type:'broadcast',event:'ping',payload:{}})}
+async function poll(){
+  if(!S)return;
+  try{V=await rpc('k_state');render()}
+  catch(e){if(/introuvable/i.test(e.message))leave()}
+}
+function connect(){
+  stop();poll();
+  ch=sb.channel('killer-'+S.code).on('broadcast',{event:'ping'},poll)
+    .subscribe(s=>{if(s==='SUBSCRIBED')ping()});
+  timer=setInterval(poll,6000);
+}
+async function act(fn,ask,args){
+  if(ask&&!confirm(ask))return;
+  try{await rpc(fn,args);err='';await poll();ping()}catch(e){err=e.message;render()}
+}
+async function enter(kind){
+  if(!sb)return render();
+  const name=$('nm').value,code=$('cd').value;
+  const r=kind==='create'?await sb.rpc('k_create',{p_name:name,p_missions:DEF}):await sb.rpc('k_join',{p_code:code,p_name:name});
+  if(r.error){err=r.error.message;return render()}
+  err='';save({code:r.data.code,token:r.data.token});connect();
+}
+function saveMis(){
+  const m=$('mt').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  rpc('k_missions',{p_missions:m}).then(()=>{draft=null;err='';return poll()}).then(ping).catch(e=>{err=e.message;render()});
+}
+
+function render(){
+  const app=$('app');
+  if(!V){
+    const c=(new URLSearchParams(location.search).get('c')||'').toUpperCase();
+    app.dataset.s='home';
+    app.innerHTML=`<h1>🔪 Killer</h1><p class="sub">Édition lycée. Chacun joue sur son écran, sans se passer le téléphone.</p>
+    <div class="card"><input id="nm" maxlength="20" placeholder="Ton pseudo" value="${esc(localStorage.getItem('kname')||'')}">
+    <button class="p" onclick="localStorage.setItem('kname',$('nm').value);enter('create')">Créer une partie</button></div>
+    <div class="card"><h2>Rejoindre</h2><input id="cd" maxlength="4" placeholder="Code (4 lettres)" value="${esc(c)}" style="text-transform:uppercase;letter-spacing:.2em">
+    <button class="p" onclick="localStorage.setItem('kname',$('nm').value);enter('join')">Rejoindre</button></div>
+    <div class="err">${esc(err)}</div>`;
+    return;
+  }
+  if(V.status==='lobby'){
+    const list=V.players.map(p=>`<div class="pl"><span>${esc(p.name)}</span><span class="badge">${p.host?'hôte':''}</span></div>`).join('');
+    if(app.dataset.s==='lobby'){$('pl').innerHTML=list;$('cnt').textContent=V.players.length;if($('go'))$('go').disabled=V.players.length<3;return}
+    app.dataset.s='lobby';
+    const link=location.origin+location.pathname+'?c='+V.code;
+    app.innerHTML=`<div class="center"><p class="sub">Code de la partie</p><div class="code">${V.code}</div>
+    <p class="badge">Ou envoie ce lien : ${esc(link)}</p></div>
+    <div class="card"><h2>Joueurs (<span id="cnt">${V.players.length}</span>)</h2><div id="pl">${list}</div></div>
+    ${V.host?`<div class="card"><h2>Missions (une par ligne)</h2><textarea id="mt">${esc(draft!==null?draft:V.missions.join('\n'))}</textarea>
+    <button onclick="saveMis()">Enregistrer les missions</button></div>
+    <button class="p" id="go" ${V.players.length<3?'disabled':''} onclick="act('k_start')">Lancer la partie</button><p class="badge center">Minimum 3 joueurs.</p>`
+    :`<p class="sub center">En attente de l’hôte…</p>`}
+    <div class="err">${esc(err)}</div><p class="center"><button onclick="leave()">Quitter</button></p>`;
+    return;
+  }
+  app.dataset.s=V.status;
+  const dead=V.players.filter(p=>!p.alive).length;
+  const players=V.players.map(p=>`<div class="pl ${p.alive?'':'dead'}"><span>${esc(p.name)}</span><span class="badge">${p.kills?p.kills+' ☠':''}</span></div>`).join('');
+  const log=`<div class="card log"><h2>Journal</h2>${V.log.map(l=>`<div>${esc(l)}</div>`).join('')}</div>`;
+  if(V.status==='ended'){
+    const rank=V.players.slice().sort((a,b)=>b.kills-a.kills).map(p=>`<div class="pl"><span>${esc(p.name)}</span><span>${p.kills} ☠</span></div>`).join('');
+    app.innerHTML=`<div class="center"><h1>🏆 ${esc(V.winner)}</h1><p class="sub">remporte la partie</p></div>
+    <div class="card"><h2>Classement des tueurs</h2>${rank}</div>${log}
+    ${V.host?`<button class="p" onclick="act('k_again')">Rejouer avec les mêmes joueurs</button>`:'<p class="sub center">L’hôte peut relancer une partie.</p>'}
+    <p class="center"><button onclick="leave()">Quitter</button></p>`;
+    return;
+  }
+  const secret=V.me.alive
+    ?`<div class="card center"><div class="badge">Ta cible</div><div class="big">🎯 ${esc(V.me.target)}</div>
+      <div class="badge">Ta mission</div><div class="mis">${esc(V.me.mission)}</div></div>
+      <button class="p" onclick="act('k_die','Tu confirmes que tu t’es fait éliminer ?')">💀 Je me suis fait avoir</button>`
+    :`<div class="card center"><div class="big">💀 Tu es éliminé(e)</div><p class="sub">Tu peux continuer à suivre la partie.</p></div>`;
+  app.innerHTML=`<h1>🔪 En cours</h1><p class="sub">${V.players.length-dead} en vie sur ${V.players.length} · ${esc(V.me.name)}</p>
+  ${secret}<div class="err">${esc(err)}</div><div class="card"><h2>Les joueurs</h2>${players}</div>${log}`;
+}
+if(S&&sb)connect();else render();
+</script>
+</body>
+</html>
